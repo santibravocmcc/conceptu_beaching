@@ -6,3 +6,4 @@ folium>=0.14.0
 pandas>=2.0.0
 netCDF4>=1.6.0
 cmocean>=3.0.0
+pillow>=9.0.0
