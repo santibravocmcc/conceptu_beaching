@@ -128,11 +128,11 @@ def inject_css(t):
         .hero h1 {{
             font-family: 'Source Serif 4', Georgia, serif;
             font-size: 2.1rem; font-weight: 700; margin: 0;
-            color: #ffffff; letter-spacing: -0.01em;
+            color: #ffffff !important; letter-spacing: -0.01em;
         }}
         .hero p {{
             margin: 0.5rem 0 0 0; font-size: 1.02rem;
-            color: rgba(255, 255, 255, 0.82); font-weight: 400;
+            color: rgba(255, 255, 255, 0.82) !important; font-weight: 400;
         }}
 
         h1, h2, h3 {{
