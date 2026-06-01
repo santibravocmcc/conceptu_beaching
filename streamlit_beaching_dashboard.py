@@ -7,6 +7,7 @@
 import os
 import glob
 import json
+import base64
 
 import numpy as np
 import xarray as xr
@@ -37,6 +38,18 @@ st.set_page_config(
 
 BEACHED_DIR = "beaching_data_nc"
 SURFACE_DIR = "surface_data_zenodo_nc"
+MPA_GEOJSON = "protected_area/mpa_mediterranean.geojson"
+
+LOGO_DIR = "logo"
+LOGOS = {
+    "conceptu": {"normal": "conceptu_normal.png", "dark": "conceptu_dark.png",
+                 "link": "https://www.lifeconceptu.eu/en/", "alt": "LIFE CONCEPTU MARIS"},
+    "cmcc": {"normal": "cmcc_normal.png", "dark": "cmcc_dark.png",
+             "link": "https://www.cmcc.it/", "alt": "CMCC"},
+}
+
+PORTFOLIO_URL = "https://santibravocmcc.github.io/portfolio/"
+WDPA_URL = "https://www.protectedplanet.net"
 
 N_BINS = 20
 
@@ -55,11 +68,14 @@ MONTH_INFO = {
     12: {"name": "December", "abbr": "DEC"},
 }
 
-# Map styles: tile layer + matplotlib/cmocean colormap tuned for each basemap
+# Map styles: tile layer + colormap + protected-area outline/fill tuned per basemap
 MAP_STYLES = {
-    "Light": {"tiles": "CartoDB positron", "attr": None, "cmap": "thermal"},
-    "Dark": {"tiles": "CartoDB dark_matter", "attr": None, "cmap": "viridis"},
-    "Streets": {"tiles": "OpenStreetMap", "attr": None, "cmap": "hot_r"},
+    "Light": {"tiles": "CartoDB positron", "attr": None, "cmap": "thermal",
+              "mpa_stroke": "#1b5e20", "mpa_fill": "#43a047"},
+    "Dark": {"tiles": "CartoDB dark_matter", "attr": None, "cmap": "viridis",
+             "mpa_stroke": "#69f0ae", "mpa_fill": "#69f0ae"},
+    "Streets": {"tiles": "OpenStreetMap", "attr": None, "cmap": "hot_r",
+                "mpa_stroke": "#1b5e20", "mpa_fill": "#2e7d32"},
 }
 
 # =============================================================================
@@ -68,6 +84,7 @@ MAP_STYLES = {
 
 THEMES = {
     "light": {
+        "mode": "light",
         "bg": "#ffffff", "surface": "#ffffff", "input_bg": "#f3f6f8",
         "text": "#1a2b34", "muted": "#5a727d", "border": "#e3eaee",
         "heading": "#0f3d4d", "primary": "#1f6f8b", "primary_hover": "#155366",
@@ -79,6 +96,7 @@ THEMES = {
         "bar_text": "#ffffff",
     },
     "dark": {
+        "mode": "dark",
         "bg": "#0e1b22", "surface": "#16252e", "input_bg": "#1b2c36",
         "text": "#e6eef2", "muted": "#9fb3bd", "border": "#273a45",
         "heading": "#7fd1e0", "primary": "#2a93a8", "primary_hover": "#37a9bf",
@@ -212,6 +230,61 @@ def hero(title, subtitle):
     )
 
 
+@st.cache_data(show_spinner=False)
+def image_data_uri(path):
+    """Return a base64 data URI for a local image (so it can go in HTML)."""
+    if not os.path.exists(path):
+        return ""
+    ext = os.path.splitext(path)[1].lstrip(".").lower()
+    mime = "image/webp" if ext == "webp" else f"image/{'jpeg' if ext in ('jpg', 'jpeg') else ext}"
+    with open(path, "rb") as f:
+        b64 = base64.b64encode(f.read()).decode("ascii")
+    return f"data:{mime};base64,{b64}"
+
+
+def render_logos(t):
+    """Clickable partner logos, right-aligned; version follows the theme."""
+    variant = "dark" if t["mode"] == "dark" else "normal"
+    items = []
+    for key in ("conceptu", "cmcc"):  # conceptu first, cmcc on the far right
+        cfg = LOGOS[key]
+        uri = image_data_uri(os.path.join(LOGO_DIR, cfg[variant]))
+        if not uri:
+            continue
+        height = 52 if key == "conceptu" else 40
+        items.append(
+            f'<a href="{cfg["link"]}" target="_blank" rel="noopener" title="{cfg["alt"]}">'
+            f'<img src="{uri}" alt="{cfg["alt"]}" style="height:{height}px;width:auto;display:block;"></a>'
+        )
+    st.markdown(
+        '<div style="display:flex;justify-content:flex-end;align-items:center;gap:26px;'
+        'min-height:54px;">' + "".join(items) + "</div>",
+        unsafe_allow_html=True,
+    )
+
+
+def render_footer(t):
+    """Subtle attribution + data citation at the bottom of the page."""
+    st.markdown(
+        f"""
+        <hr style="margin-top:2.4rem;margin-bottom:1rem;border:none;border-top:1px solid {t['border']};">
+        <div style="font-size:0.82rem;color:{t['muted']};line-height:1.6;padding-bottom:1.5rem;">
+            Developed by
+            <a href="{PORTFOLIO_URL}" target="_blank" rel="noopener"
+               style="color:{t['primary']};text-decoration:none;font-weight:600;">Santiago Bravo</a>,
+            CMCC Foundation–Euro-Mediterranean Center on Climate Change, Italy.
+            <br>
+            Protected-area data: UNEP-WCMC and IUCN (2026), Protected Planet: The World Database on
+            Protected Areas (WDPA) and World Database on Other Effective Area-based Conservation
+            Measures (WD-OECM) [Online], June 2026, Cambridge, UK: UNEP-WCMC and IUCN. Available at:
+            <a href="{WDPA_URL}" target="_blank" rel="noopener"
+               style="color:{t['primary']};text-decoration:none;">www.protectedplanet.net</a>.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def render_table(df, t):
     """Render a dataframe as a themed HTML table (st.dataframe's canvas grid
     can't follow the runtime dark/light theme, so we draw our own)."""
@@ -268,6 +341,15 @@ def load_surface_months():
 @st.cache_data(show_spinner=False)
 def load_dataset(filepath):
     return xr.open_dataset(filepath)
+
+
+@st.cache_data(show_spinner=False)
+def load_mpa_geojson():
+    """Raw GeoJSON text for the Marine Protected Areas layer ('' if missing)."""
+    if not os.path.exists(MPA_GEOJSON):
+        return ""
+    with open(MPA_GEOJSON, "r") as f:
+        return f.read()
 
 
 # =============================================================================
@@ -481,7 +563,55 @@ def create_frequency_map(frequency, lats, lons, title, legend_title, style_name)
     # Click-to-inspect: embed non-zero cell values and a single click handler that
     # looks up the cell under the cursor and shows its frequency in a popup.
     add_click_inspect(m, frequency, lats, lons, dlat, dlon, legend_title)
+
+    # Marine Protected Areas overlay (toggle in the in-map layer control; off by default).
+    mpa = load_mpa_geojson()
+    if mpa:
+        add_mpa_layer(m, mpa, style["mpa_stroke"], style["mpa_fill"])
     return m
+
+
+def add_mpa_layer(m, geojson_str, stroke, fill):
+    """Add the WDPA Marine Protected Areas as a toggleable vector overlay.
+
+    The layer is registered in a Leaflet layer control but NOT added to the map,
+    so it starts hidden. Polygon clicks stop propagation so they take priority
+    over the frequency-cell handler (the protected-area info wins on overlap)."""
+    map_name = m.get_name()
+    js = f"""
+    <script>
+    (function() {{
+        function addMPA() {{
+            if (typeof {map_name} === 'undefined' || typeof L === 'undefined') {{ setTimeout(addMPA, 200); return; }}
+            var data = {geojson_str};
+            function popupHtml(p) {{
+                var nameHtml = p.url
+                    ? '<a href="' + p.url + '" target="_blank" rel="noopener" style="color:#1f6f8b;text-decoration:underline;font-weight:600;">' + p.name + '</a>'
+                    : '<span style="font-weight:600;color:#0f3d4d;">' + p.name + '</span>';
+                var desig = p.desig + (p.desig_type && p.desig_type !== 'Not Reported' ? ' (' + p.desig_type + ')' : '');
+                return '<div style="font-family:Inter,sans-serif;font-size:12.5px;color:#1a2b34;max-width:260px;line-height:1.5;">'
+                     + '<div style="font-size:13.5px;margin-bottom:5px;">' + nameHtml + '</div>'
+                     + '<div style="color:#5a727d;"><b style="color:#0f3d4d;">Designation:</b> ' + desig + '</div>'
+                     + '<div style="color:#5a727d;"><b style="color:#0f3d4d;">IUCN category:</b> ' + p.iucn + '</div></div>';
+            }}
+            var mpaLayer = L.geoJSON(data, {{
+                style: function() {{ return {{color:'{stroke}', weight:1.4, fillColor:'{fill}', fillOpacity:0.12, opacity:0.9}}; }},
+                onEachFeature: function(feature, lyr) {{
+                    lyr.on('click', function(e) {{
+                        L.DomEvent.stopPropagation(e);
+                        L.popup({{maxWidth:280}}).setLatLng(e.latlng).setContent(popupHtml(feature.properties)).openOn({map_name});
+                    }});
+                    lyr.on('mouseover', function() {{ lyr.setStyle({{fillOpacity:0.32, weight:2.4}}); }});
+                    lyr.on('mouseout', function() {{ mpaLayer.resetStyle(lyr); }});
+                }}
+            }});
+            L.control.layers(null, {{'Marine Protected Areas': mpaLayer}}, {{collapsed:false, position:'topright'}}).addTo({map_name});
+        }}
+        addMPA();
+    }})();
+    </script>
+    """
+    m.get_root().html.add_child(folium.Element(js))
 
 
 def add_click_inspect(m, frequency, lats, lons, dlat, dlon, value_label):
@@ -685,15 +815,19 @@ def view_surface_maps(months):
 # =============================================================================
 
 def main():
-    # Theme toggle (top-right). Read before injecting CSS so the page renders
-    # in the chosen theme on the same run.
-    spacer, toggle_col = st.columns([6, 1])
+    # Header row: theme toggle (left) and partner logos (right). Dark is the
+    # default; the switch turns Light mode on. Read the toggle before injecting
+    # CSS so the page renders in the chosen theme on the same run.
+    toggle_col, logo_col = st.columns([1, 2])
     with toggle_col:
-        dark = st.toggle("Dark mode", value=st.session_state.get("dark_mode", False), key="dark_toggle")
-    st.session_state["dark_mode"] = dark
-    theme = THEMES["dark"] if dark else THEMES["light"]
+        light = st.toggle("Light mode", value=st.session_state.get("light_mode", False), key="light_toggle")
+    st.session_state["light_mode"] = light
+    theme = THEMES["light"] if light else THEMES["dark"]
 
     inject_css(theme)
+
+    with logo_col:
+        render_logos(theme)
 
     beached_months = load_beached_months()
     surface_months = load_surface_months()
@@ -720,6 +854,8 @@ def main():
             st.error(f"No surface data files found in '{SURFACE_DIR}'.")
         else:
             view_surface_maps(surface_months)
+
+    render_footer(theme)
 
 
 if __name__ == "__main__":
