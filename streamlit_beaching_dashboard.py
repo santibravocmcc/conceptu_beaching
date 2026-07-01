@@ -39,6 +39,7 @@ st.set_page_config(
 BEACHED_DIR = "beaching_data_nc"
 SURFACE_DIR = "surface_data_zenodo_nc"
 MPA_GEOJSON = "protected_area/mpa_mediterranean.geojson"
+GA_MEASUREMENT_ID = "G-G54Y1MVWSJ"
 
 LOGO_DIR = "logo"
 LOGOS = {
@@ -282,6 +283,23 @@ def render_footer(t):
         </div>
         """,
         unsafe_allow_html=True,
+    )
+
+
+def inject_analytics(measurement_id):
+    """Load the Google Analytics 4 tag. st.markdown strips <script> tags even
+    with unsafe_allow_html, so this needs the unsanitized components.html iframe."""
+    st.components.v1.html(
+        f"""
+        <script async src="https://www.googletagmanager.com/gtag/js?id={measurement_id}"></script>
+        <script>
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){{dataLayer.push(arguments);}}
+          gtag('js', new Date());
+          gtag('config', '{measurement_id}');
+        </script>
+        """,
+        height=0,
     )
 
 
@@ -815,6 +833,8 @@ def view_surface_maps(months):
 # =============================================================================
 
 def main():
+    inject_analytics(GA_MEASUREMENT_ID)
+
     # Header row: theme toggle (left) and partner logos (right). Dark is the
     # default; the switch turns Light mode on. Read the toggle before injecting
     # CSS so the page renders in the chosen theme on the same run.
