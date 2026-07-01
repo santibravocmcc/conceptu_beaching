@@ -287,16 +287,30 @@ def render_footer(t):
 
 
 def inject_analytics(measurement_id):
-    """Load the Google Analytics 4 tag. st.markdown strips <script> tags even
-    with unsafe_allow_html, so this needs the unsanitized components.html iframe."""
+    """Load the Google Analytics 4 tag on the real app page.
+
+    st.components.v1.html renders into a sandboxed child iframe, so a plain gtag
+    snippet placed there is invisible to GA and to Google's tag detector (both
+    only inspect the top-level document). The iframe is same-origin (srcdoc), so
+    we reach up into the parent document and inject the tag there instead, once."""
     st.components.v1.html(
         f"""
-        <script async src="https://www.googletagmanager.com/gtag/js?id={measurement_id}"></script>
         <script>
-          window.dataLayer = window.dataLayer || [];
-          function gtag(){{dataLayer.push(arguments);}}
-          gtag('js', new Date());
-          gtag('config', '{measurement_id}');
+        (function() {{
+            var doc = window.parent.document;
+            if (doc.getElementById('ga-gtag-js')) return;  // inject only once
+            var s = doc.createElement('script');
+            s.id = 'ga-gtag-js';
+            s.async = true;
+            s.src = 'https://www.googletagmanager.com/gtag/js?id={measurement_id}';
+            doc.head.appendChild(s);
+            var s2 = doc.createElement('script');
+            s2.innerHTML = "window.dataLayer = window.dataLayer || [];"
+                + "function gtag(){{dataLayer.push(arguments);}}"
+                + "gtag('js', new Date());"
+                + "gtag('config', '{measurement_id}');";
+            doc.head.appendChild(s2);
+        }})();
         </script>
         """,
         height=0,
